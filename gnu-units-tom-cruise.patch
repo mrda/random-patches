@@ -1,0 +1,11 @@
+--- definitions.units.original	2019-07-16 09:30:15.821990468 +0930
++++ definitions.units	2019-07-16 09:29:48.631941552 +0930
+@@ -2941,6 +2941,8 @@
+                                #   bridge renovation the new sidewalk was
+                                #   scored every Smoot rather than at the
+                                #   customary 6 ft spacing.
++tomcruise             172.1 cm # The height of Tom Cruise, lifted from
++                               # from https://www.celebheights.com/s/Tom-Cruise-3.html
+ 
+ #
+ # Cooking measures
