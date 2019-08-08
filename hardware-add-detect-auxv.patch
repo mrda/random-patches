@@ -1,0 +1,180 @@
+diff --git a/hardware/detect.py b/hardware/detect.py
+index cce8f343..b42ea762 100644
+--- a/hardware/detect.py
++++ b/hardware/detect.py
+@@ -51,8 +51,11 @@ from hardware import megacli
+ from hardware import rtc
+ from hardware import smart_utils
+ 
+-
+ SIOCGIFNETMASK = 0x891b
++AUXV_FLAGS = ["AT_HWCAP", "AT_HWCAP2", "AT_PAGESZ",
++              "AT_FLAGS", "AT_PLATFORM"]
++# These flags may or not be present on a particular arch
++AUXV_OPT_FLAGS = ["AT_BASE_PLATFORM"]
+ 
+ 
+ def size_in_gb(size):
+@@ -861,6 +864,27 @@ def detect_rtc_clock(hw_lst):
+     hw_lst.append(('system', 'rtc', 'utc', rtc.get_rtc()))
+ 
+ 
++def detect_auxv(hw_lst):
++    new_env = os.environ.copy()
++    new_env["LD_SHOW_AUXV"] = "1"
++
++    cmd = Popen("/bin/true",
++                env=new_env,
++                stdout=PIPE)
++    stdout, err = cmd.communicate()
++    if err is not None:
++        sys.stderr.write("Info: AUXV output received\n")
++        return
++
++    auxv = dict()
++    supported_flags = AUXV_FLAGS + AUXV_OPT_FLAGS
++    for line in stdout.decode("utf-8").splitlines():
++        k, v = [i.strip() for i in line.split(":")]
++        if k in supported_flags:
++            auxv[k[3:].lower()] = v
++            hw_lst.append(('hw', 'auxv', k[3:].lower(), v))
++
++
+ def parse_ahci(hrdw, words):
+     if len(words) < 4:
+         return
+@@ -943,6 +967,7 @@ def main():
+     detect_utils.get_ddr_timing(hrdw)
+     detect_utils.ipmi_sdr(hrdw)
+     detect_rtc_clock(hrdw)
++    detect_auxv(hrdw)
+     parse_dmesg(hrdw)
+     bios_hp.dump_hp_bios(hrdw)
+ 
+diff --git a/hardware/tests/test_detect.py b/hardware/tests/test_detect.py
+index 6d840ee0..364b5992 100644
+--- a/hardware/tests/test_detect.py
++++ b/hardware/tests/test_detect.py
+@@ -15,6 +15,7 @@
+ # License for the specific language governing permissions and limitations
+ # under the License.
+ 
++import textwrap
+ import unittest
+ 
+ import mock
+@@ -227,6 +228,114 @@ class TestDetect(unittest.TestCase):
+                                   b'h\xc3\xa9llo', 1)]),
+             [(u'\ufffd' * 4, u'\ufffd' * 4, u'h\xe9llo', 1)])
+ 
++    @mock.patch.object(detect, 'Popen')
++    @mock.patch('os.environ.copy')
++    def test_detect_auxv_x86_succeed(self, mock_environ_copy, mock_popen):
++        test_data = {
++            'AT_HWCAP': ('hwcap', 'bfebfbff'),
++            'AT_HWCAP2': ('hwcap2', '0x0'),
++            'AT_PAGESZ': ('pagesz', '4096'),
++            'AT_FLAGS': ('flags', '0x0'),
++            'AT_PLATFORM': ('platform', 'x86_64'),
++        }
++
++        test_x86_data = textwrap.dedent(
++            """AT_SYSINFO_EHDR:      0x7fff623e0000
++            {}:             {}
++            {}:            {}
++            AT_CLKTCK:            100
++            AT_PHDR:              0x55f94b7ae040
++            AT_PHENT:             56
++            AT_PHNUM:             12
++            AT_BASE:              0x7fe141d7c000
++            {}:             {}
++            AT_ENTRY:             0x55f94b7b0620
++            AT_UID:               1000
++            AT_EUID:              1000
++            AT_GID:               1000
++            AT_EGID:              1000
++            AT_SECURE:            0
++            AT_RANDOM:            0x7fff62363f59
++            {}:            {}
++            AT_EXECFN:            /bin/true
++            {}:          {}
++            """.format('AT_HWCAP', test_data['AT_HWCAP'][1],
++                       'AT_PAGESZ', test_data['AT_PAGESZ'][1],
++                       'AT_FLAGS', test_data['AT_FLAGS'][1],
++                       'AT_HWCAP2', test_data['AT_HWCAP2'][1],
++                       'AT_PLATFORM', test_data['AT_PLATFORM'][1]))
++
++        process_mock = mock.Mock()
++        attrs = {'communicate.return_value': (test_x86_data.encode('utf-8'),
++                                              None)}
++        process_mock.configure_mock(**attrs)
++        mock_popen.return_value = process_mock
++
++        hw = []
++        detect.detect_auxv(hw)
++
++        # NOTE(mrda): x86 doesn't have AUXV_OPT_FLAGS
++        for k in detect.AUXV_FLAGS:
++            t = ('hw', 'auxv', test_data[k][0], test_data[k][1])
++            self.assertTrue(t in hw)
++
++    @mock.patch.object(detect, 'Popen')
++    @mock.patch('os.environ.copy')
++    def test_detect_auxv_ppc8_succeed(self, mock_environ_copy, mock_popen):
++        test_data = {
++            'AT_HWCAP': ('hwcap', 'true_le archpmu vsx arch_2_06 dfp ic_snoop smt mmu fpu altivec ppc64 ppc32'),
++            'AT_HWCAP2': ('hwcap2', 'htm-nosc vcrypto tar isel ebb dscr htm arch_2_07'),
++            'AT_PAGESZ': ('pagesz', '65536'),
++            'AT_FLAGS': ('flags', '0x0'),
++            'AT_PLATFORM': ('platform', 'power8'),
++            'AT_BASE_PLATFORM': ('base_platform', 'power8'),
++        }
++
++        test_ppc8_data = textwrap.dedent(
++            """AT_DCACHEBSIZE:  0x80
++            AT_ICACHEBSIZE:  0x80
++            AT_UCACHEBSIZE:  0x0
++            AT_SYSINFO_EHDR: 0x3fff95170000
++            {}:        {}
++            {}:       {}
++            AT_CLKTCK:       100
++            AT_PHDR:         0x10000040
++            AT_PHENT:        56
++            AT_PHNUM:        9
++            AT_BASE:         0x3fff95190000
++            {}:        {}
++            AT_ENTRY:        0x1000147c
++            AT_UID:          0
++            AT_EUID:         0
++            AT_GID:          0
++            AT_EGID:         0
++            AT_SECURE:       0
++            AT_RANDOM:       0x3ffff55c9492
++            {}:       {}
++            AT_EXECFN:       /bin/true
++            {}:     {}
++            {}:{}
++            """.format('AT_HWCAP', test_data['AT_HWCAP'][1],
++                       'AT_PAGESZ', test_data['AT_PAGESZ'][1],
++                       'AT_FLAGS', test_data['AT_FLAGS'][1],
++                       'AT_HWCAP2', test_data['AT_HWCAP2'][1],
++                       'AT_PLATFORM', test_data['AT_PLATFORM'][1],
++                       'AT_BASE_PLATFORM', test_data['AT_BASE_PLATFORM'][1]))
++
++        process_mock = mock.Mock()
++        attrs = {'communicate.return_value': (test_ppc8_data.encode('utf-8'),
++                                              None)}
++        process_mock.configure_mock(**attrs)
++        mock_popen.return_value = process_mock
++
++        hw = []
++        detect.detect_auxv(hw)
++
++        ppc_flags = detect.AUXV_FLAGS + detect.AUXV_OPT_FLAGS
++        for k in ppc_flags:
++            t = ('hw', 'auxv', test_data[k][0], test_data[k][1])
++            self.assertTrue(t in hw)
++
+     @mock.patch.object(detect, 'Popen')
+     @mock.patch('os.uname', return_value=('', '', '', '', 'x86_64'))
+     def test_get_uuid_x86_64(self, mock_uname, mock_popen):
