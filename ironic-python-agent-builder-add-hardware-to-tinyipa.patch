@@ -1,0 +1,23 @@
+diff --git a/tinyipa/build-tinyipa.sh b/tinyipa/build-tinyipa.sh
+index b011bca..3f489f6 100755
+--- a/tinyipa/build-tinyipa.sh
++++ b/tinyipa/build-tinyipa.sh
+@@ -89,6 +89,9 @@ if [ -n "$IRONIC_LIB_SOURCE" ]; then
+     popd
+ fi
+ 
++# Add in EXTRA_PYTHON_DEPS if required
++[ ! -z $EXTRA_PYTHON_DEPS ] && echo $EXTRA_PYTHON_DEPS | tr "," "\n" >> "$BUILDDIR/tmp/extra-python-deps.txt"
++
+ imagebuild/common/generate_upper_constraints.sh upper-constraints.txt
+ if [ -n "$IRONIC_LIB_SOURCE" ]; then
+     sed -i '/ironic-lib/d' upper-constraints.txt $BUILDDIR/tmp/ipa-requirements.txt
+@@ -152,6 +155,7 @@ $CHROOT_CMD ${TINYIPA_PYTHON_EXE} -m ensurepip
+ $CHROOT_CMD ${PIP_COMMAND} install --upgrade pip wheel
+ $CHROOT_CMD ${PIP_COMMAND} install pbr
+ $CHROOT_CMD ${PIP_COMMAND} wheel -c /tmp/upper-constraints.txt --wheel-dir /tmp/wheels -r /tmp/ipa-requirements.txt
++$CHROOT_CMD [ -r /tmp/extra-python-deps.txt ] && $CHROOT_CMD ${PIP_COMMAND} wheel -c /tmp/upper-constraints.txt --wheel-dir /tmp/wheels -r /tmp/extra-python-deps.txt
+ if [ -n "$IRONIC_LIB_SOURCE" ]; then
+     $CHROOT_CMD ${PIP_COMMAND} wheel -c /tmp/upper-constraints.txt --wheel-dir /tmp/wheels -r /tmp/ironic-lib-requirements.txt
+     $CHROOT_CMD ${PIP_COMMAND} wheel -c /tmp/upper-constraints.txt --no-index --pre --wheel-dir /tmp/wheels --find-links=/tmp/localpip --find-links=/tmp/wheels ironic-lib
+
