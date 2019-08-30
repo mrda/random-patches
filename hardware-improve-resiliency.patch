@@ -1,0 +1,41 @@
+diff --git a/hardware/detect.py b/hardware/detect.py
+index b42ea762..7afe9f16 100644
+--- a/hardware/detect.py
++++ b/hardware/detect.py
+@@ -735,7 +735,10 @@ def get_cpus(hw_lst):
+             hw_lst.append(('cpu', ltag, "governor", value))
+ 
+     # Extracting numa nodes
+-    hw_lst.append(('numa', 'nodes', 'count', int(lscpu['NUMA node(s)'])))
++    try:
++        hw_lst.append(('numa', 'nodes', 'count', int(lscpu['NUMA node(s)'])))
++    except KeyError:
++        pass
+ 
+     # Allow for sparse numa nodes.
+     numa_nodes = []
+diff --git a/hardware/rtc.py b/hardware/rtc.py
+index 7726d800..d8a665e3 100644
+--- a/hardware/rtc.py
++++ b/hardware/rtc.py
+@@ -26,15 +26,17 @@ LOG = logging.getLogger('hardware.rtc')
+ 
+ def get_rtc():
+     cmd = ['timedatectl', 'status', '--no-pager']
+-    stdout = check_output(cmd).decode("utf-8")
++    try:
++        stdout = check_output(cmd).decode("utf-8")
++    except OSError:
++        LOG.warning('Unable to determine RTC timezone (no timedatectl)')
++        stdout = None
+     if stdout:
+         match = re.search(r'RTC in local TZ: ([a-z]+)$', stdout)
+         if match:
+             LOG.info('Is RTC set to UTC: %s' % match.group(1))
+             return match.group(1)
+-
+         LOG.warning('Unable to determine RTC timezone (no match)')
+     else:
+         LOG.warning('Unable to determine RTC timezone (no output)')
+-
+     return 'unknown'
