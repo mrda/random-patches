@@ -1,0 +1,67 @@
+diff --git a/tinyipa/build-tinyipa.sh b/tinyipa/build-tinyipa.sh
+index b011bca..55121d6 100755
+--- a/tinyipa/build-tinyipa.sh
++++ b/tinyipa/build-tinyipa.sh
+@@ -9,6 +9,7 @@ TINYCORE_MIRROR_URL=${TINYCORE_MIRROR_URL:-}
+ TINYIPA_REQUIRE_BIOSDEVNAME=${TINYIPA_REQUIRE_BIOSDEVNAME:-false}
+ TINYIPA_REQUIRE_IPMITOOL=${TINYIPA_REQUIRE_IPMITOOL:-true}
+ IRONIC_LIB_SOURCE=${IRONIC_LIB_SOURCE:-}
++HARDWARE_SOURCE=${HARDWARE_SOURCE:-}
+ USE_PYTHON3=${USE_PYTHON3:-True}
+ 
+ CHROOT_PATH="/tmp/overides:/usr/local/sbin:/usr/local/bin:/apps/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+@@ -89,6 +90,14 @@ if [ -n "$IRONIC_LIB_SOURCE" ]; then
+     popd
+ fi
+ 
++if [ -n "$HARDWARE_SOURCE" ]; then
++    pushd $HARDWARE_SOURCE
++    rm -rf *.egg-info
++    python setup.py sdist --dist-dir "$BUILDDIR/tmp/localpip" --quiet
++    cp requirements.txt $BUILDDIR/tmp/hardware-requirements.txt
++    popd
++fi
++
+ imagebuild/common/generate_upper_constraints.sh upper-constraints.txt
+ if [ -n "$IRONIC_LIB_SOURCE" ]; then
+     sed -i '/ironic-lib/d' upper-constraints.txt $BUILDDIR/tmp/ipa-requirements.txt
+@@ -156,6 +165,11 @@ if [ -n "$IRONIC_LIB_SOURCE" ]; then
+     $CHROOT_CMD ${PIP_COMMAND} wheel -c /tmp/upper-constraints.txt --wheel-dir /tmp/wheels -r /tmp/ironic-lib-requirements.txt
+     $CHROOT_CMD ${PIP_COMMAND} wheel -c /tmp/upper-constraints.txt --no-index --pre --wheel-dir /tmp/wheels --find-links=/tmp/localpip --find-links=/tmp/wheels ironic-lib
+ fi
++if [ -n "$HARDWARE_SOURCE" ]; then
++    $CHROOT_CMD ${PIP_COMMAND} wheel -c /tmp/upper-constraints.txt --wheel-dir /tmp/wheels -r /tmp/hardware-requirements.txt
++    $CHROOT_CMD ${PIP_COMMAND} wheel -c /tmp/upper-constraints.txt --no-index --pre --wheel-dir /tmp/wheels --find-links=/tmp/localpip --find-links=/tmp/wheels hardware
++fi
++
+ $CHROOT_CMD ${PIP_COMMAND} wheel -c /tmp/upper-constraints.txt --no-index --pre --wheel-dir /tmp/wheels --find-links=/tmp/localpip --find-links=/tmp/wheels ironic-python-agent
+ echo Resulting wheels:
+ ls -1 $BUILDDIR/tmp/wheels
+diff --git a/tinyipa/finalise-tinyipa.sh b/tinyipa/finalise-tinyipa.sh
+index dace708..b21bdac 100755
+--- a/tinyipa/finalise-tinyipa.sh
++++ b/tinyipa/finalise-tinyipa.sh
+@@ -22,6 +22,11 @@ USE_PYTHON3=${USE_PYTHON3:-True}
+ 
+ echo "Finalising tinyipa:"
+ 
++if [ -n "$HARDWARE_SOURCE" ]; then
++    # hardware depends upon numpy which can't be optimised
++    PYOPTIMIZE_TINYIPA=false
++fi
++
+ if $AUTHORIZE_SSH ; then
+     echo "Validating location of public SSH key"
+     if [ -n "$SSH_PUBLIC_KEY" ]; then
+@@ -140,7 +145,11 @@ $CHROOT_CMD ${TINYIPA_PYTHON_EXE} -m ensurepip --upgrade
+ 
+ # If flag is set install python now
+ if $BUILD_AND_INSTALL_TINYIPA ; then
++    if [ -n "$HARDWARE_SOURCE" ]; then
++        $CHROOT_CMD $PIP_COMMAND install --no-index --find-links=file:///tmp/wheelhouse --pre hardware
++    fi
+     $CHROOT_CMD $PIP_COMMAND install --no-index --find-links=file:///tmp/wheelhouse --pre ironic_python_agent
++
+     rm -rf $FINALDIR/tmp/wheelhouse
+ fi
+ 
