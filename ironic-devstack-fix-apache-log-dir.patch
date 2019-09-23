@@ -1,0 +1,27 @@
+diff --git a/devstack/files/apache-ipxe-ironic.template b/devstack/files/apache-ipxe-ironic.template
+index ba182e5..3be4717 100644
+--- a/devstack/files/apache-ipxe-ironic.template
++++ b/devstack/files/apache-ipxe-ironic.template
+@@ -9,8 +9,8 @@ Listen %PUBLICPORT%
+         Allow from all
+         Require all granted
+     </Directory>
+-    ErrorLog /var/log/apache2/ipxe_error.log
++    ErrorLog %APACHELOGDIR%/ipxe_error.log
+     ErrorLogFormat "%{cu}t [%-m:%l] [pid %P:tid %T] %7F: %E: [client\ %a] [frontend\ %A] %M% ,\ referer\ %{Referer}i"
+     LogLevel info
+-    CustomLog /var/log/apache2/ipxe_access.log "%{%Y-%m-%d}t %{%T}t.%{msec_frac}t [%l] %a \"%r\" %>s %b"
++    CustomLog %APACHELOGDIR%/ipxe_access.log "%{%Y-%m-%d}t %{%T}t.%{msec_frac}t [%l] %a \"%r\" %>s %b"
+ </VirtualHost>
+diff --git a/devstack/lib/ironic b/devstack/lib/ironic
+index 910be51..4df8ee7 100644
+--- a/devstack/lib/ironic
++++ b/devstack/lib/ironic
+@@ -1076,6 +1076,7 @@ function _config_ironic_apache_ipxe {
+     sudo sed -e "
+         s|%PUBLICPORT%|$IRONIC_HTTP_PORT|g;
+         s|%HTTPROOT%|$IRONIC_HTTP_DIR|g;
++        s|%APACHELOGDIR%|$APACHE_LOG_DIR|g;
+     " -i $ipxe_apache_conf
+     enable_apache_site ipxe-ironic
+ }
